@@ -6,7 +6,6 @@ static CAN_HandleTypeDef *buses[2];
 static LaunchMotorFeedback_t feedback[2][8];
 static int16_t command[2][8];
 
-static CAN_HandleTypeDef *bus_for(uint8_t index) { return (index == 1U) ? buses[0] : (index == 2U) ? buses[1] : 0; }
 static void put_be(uint8_t *p, int16_t value) { p[0] = (uint8_t)((uint16_t)value >> 8); p[1] = (uint8_t)value; }
 
 void LaunchMotorBus_Init(CAN_HandleTypeDef *can1, CAN_HandleTypeDef *can2)

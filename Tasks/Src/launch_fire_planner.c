@@ -23,7 +23,6 @@ void LaunchFirePlanner_Update(LaunchFirePlanner_t *planner, float actual_deg,
                               uint32_t now_ms, uint32_t interval_ms,
                               uint32_t requested_count, uint8_t enabled)
 {
-    uint32_t elapsed_ms;
     float step = LAUNCH_FEEDER_DIR * LAUNCH_FEEDER_STEP_DEG;
     if (planner == 0) return;
     if (interval_ms == 0U) interval_ms = 1U;
@@ -33,6 +32,7 @@ void LaunchFirePlanner_Update(LaunchFirePlanner_t *planner, float actual_deg,
         return;
     }
 #if (LAUNCH_ENABLE_CONTINUOUS_PLL != 0U)
+    uint32_t elapsed_ms;
     /* 原工程行为：相位参考按“每个间隔一发”连续推进。卡弹导致相位误差超过
      * 两发时重新锁相，避免恢复时追赶产生危险的加速度。 */
     elapsed_ms = now_ms - planner->last_update_ms;

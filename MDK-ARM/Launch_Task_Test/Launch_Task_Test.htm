@@ -3,7 +3,7 @@
 <title>Static Call Graph - [Launch_Task_Test\Launch_Task_Test.axf]</title></head>
 <body><HR>
 <H1>Static Call Graph for image Launch_Task_Test\Launch_Task_Test.axf</H1><HR>
-<BR><P>#&#060CALLGRAPH&#062# ARM Linker, 5060960: Last Updated: Thu Sep 17 00:10:00 2026
+<BR><P>#&#060CALLGRAPH&#062# ARM Linker, 5060960: Last Updated: Thu Sep 17 00:21:20 2026
 <BR><P>
 <H3>Maximum Stack Usage =        580 bytes + Unknown(Functions without stacksize, Cycles, Untraceable Function Pointers)</H3><H3>
 Call chain for Maximum Stack Depth:</H3>
@@ -1355,7 +1355,7 @@ Global Symbols
 <BR>[Called By]<UL><LI><a href="#[7d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;main
 </UL>
 
-<P><STRONG><a name="[f1]"></a>LaunchController_Task</STRONG> (Thumb, 858 bytes, Stack size 64 bytes, launch_controller.o(i.LaunchController_Task))
+<P><STRONG><a name="[f1]"></a>LaunchController_Task</STRONG> (Thumb, 742 bytes, Stack size 64 bytes, launch_controller.o(i.LaunchController_Task))
 <BR><BR>[Stack]<UL><LI>Max Depth = 580<LI>Call Chain = LaunchController_Task &rArr; process_transport_queue &rArr; process_line &rArr; __hardfp_strtof &rArr; __strtof_int &rArr; __strtod_int &rArr; _local_sscanf &rArr; _scanf_real &rArr; _scanf_really_real &rArr; _fp_value &rArr; _btod_etento &rArr; _btod_emul &rArr; _e2e
 </UL>
 <BR>[Calls]<UL><LI><a href="#[f7]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;LaunchMotorBus_SetCommand
@@ -1408,11 +1408,11 @@ Global Symbols
 <LI><a href="#[f1]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;LaunchController_Task
 </UL>
 
-<P><STRONG><a name="[fb]"></a>LaunchFirePlanner_TargetSpeedRpm</STRONG> (Thumb, 76 bytes, Stack size 0 bytes, launch_fire_planner.o(i.LaunchFirePlanner_TargetSpeedRpm))
+<P><STRONG><a name="[fb]"></a>LaunchFirePlanner_TargetSpeedRpm</STRONG> (Thumb, 88 bytes, Stack size 0 bytes, launch_fire_planner.o(i.LaunchFirePlanner_TargetSpeedRpm))
 <BR><BR>[Called By]<UL><LI><a href="#[f1]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;LaunchController_Task
 </UL>
 
-<P><STRONG><a name="[fa]"></a>LaunchFirePlanner_Update</STRONG> (Thumb, 64 bytes, Stack size 8 bytes, launch_fire_planner.o(i.LaunchFirePlanner_Update))
+<P><STRONG><a name="[fa]"></a>LaunchFirePlanner_Update</STRONG> (Thumb, 302 bytes, Stack size 8 bytes, launch_fire_planner.o(i.LaunchFirePlanner_Update))
 <BR><BR>[Stack]<UL><LI>Max Depth = 8<LI>Call Chain = LaunchFirePlanner_Update
 </UL>
 <BR>[Calls]<UL><LI><a href="#[f8]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;LaunchFirePlanner_Reset
@@ -2371,8 +2371,8 @@ Local Symbols
 <P><STRONG><a name="[103]"></a>send_group</STRONG> (Thumb, 84 bytes, Stack size 56 bytes, launch_motor_bus.o(i.send_group))
 <BR><BR>[Stack]<UL><LI>Max Depth = 76<LI>Call Chain = send_group &rArr; HAL_CAN_AddTxMessage
 </UL>
-<BR>[Calls]<UL><LI><a href="#[154]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_CAN_GetTxMailboxesFreeLevel
-<LI><a href="#[155]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_CAN_AddTxMessage
+<BR>[Calls]<UL><LI><a href="#[155]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_CAN_AddTxMessage
+<LI><a href="#[154]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_CAN_GetTxMailboxesFreeLevel
 <LI><a href="#[bc]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_memclr4
 </UL>
 <BR>[Called By]<UL><LI><a href="#[fc]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;LaunchMotorBus_Service

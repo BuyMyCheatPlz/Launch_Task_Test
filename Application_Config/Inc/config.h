@@ -22,10 +22,10 @@
 #define LAUNCH_DEFAULT_BULLET_COUNT    1U
 #define LAUNCH_DEFAULT_SINGLE_INTERVAL_MS 50U
 /* 1：使用原工程锁相环连发规划；0：逐发规划，间隔可由 VOFA 在线调整。 */
-#define LAUNCH_ENABLE_CONTINUOUS_PLL   0U
+#define LAUNCH_ENABLE_CONTINUOUS_PLL   1U
 /* 卡弹保护：拨盘目标误差大且反馈速度持续接近零时判卡弹；拨盘反退五发后，
  * 全部电机停机，直至下一次 START。 */
-#define LAUNCH_ENABLE_JAM_PROTECTION   1U
+#define LAUNCH_ENABLE_JAM_PROTECTION   0U
 #define LAUNCH_JAM_STALL_MS            300U
 #define LAUNCH_JAM_MIN_ERROR_DEG       20.0f
 #define LAUNCH_JAM_ZERO_SPEED_RPM      30.0f

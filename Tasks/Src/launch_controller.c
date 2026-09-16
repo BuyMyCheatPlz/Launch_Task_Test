@@ -25,7 +25,9 @@ static volatile uint8_t active; static volatile uint32_t completed_bullets;
 static volatile float actual_left_rpm, actual_right_rpm, feeder_deg, feeder_target_deg;
 static LaunchFirePlanner_t fire_planner;
 static volatile uint8_t jam_latched, jam_retreat_active;
+#if (LAUNCH_ENABLE_JAM_PROTECTION != 0U)
 static uint32_t jam_stall_since_ms;
+#endif
 static float jam_retreat_target_deg;
 
 /* CubeMX 创建的 16 深度 uint16_t 队列：UART 中断只投递数据，
@@ -205,7 +207,11 @@ void LaunchController_Task(void *argument)
         flywheel_ready = (uint8_t)((left != 0) && (left->online != 0U) &&
                                    (right != 0) && (right->online != 0U));
         if (command.stop_request != 0U) { command.stop_request = 0U; active = 0U; jam_retreat_active = 0U; set_all_zero(); pid_reset(&left_pid); pid_reset(&right_pid); pid_reset(&feeder_pid); encoder_ready = 0U; fire_planner.initialized = 0U; }
-        if (command.start_request != 0U) { command.start_request = 0U; active = 1U; jam_latched = 0U; jam_retreat_active = 0U; jam_stall_since_ms = 0U; completed_bullets = 0U; start_ms = now; encoder_ready = 0U; fire_planner.initialized = 0U; }
+        if (command.start_request != 0U) { command.start_request = 0U; active = 1U; jam_latched = 0U; jam_retreat_active = 0U;
+#if (LAUNCH_ENABLE_JAM_PROTECTION != 0U)
+            jam_stall_since_ms = 0U;
+#endif
+            completed_bullets = 0U; start_ms = now; encoder_ready = 0U; fire_planner.initialized = 0U; }
         if (active != 0U) {
             /* 摩擦轮任意一侧无反馈时，禁止推进拨盘。 */
             if (flywheel_ready == 0U) start_ms = now;
@@ -236,7 +242,9 @@ void LaunchController_Task(void *argument)
                 }
                 else
                 {
+#if (LAUNCH_ENABLE_JAM_PROTECTION != 0U)
                     float target_error;
+#endif
                     LaunchFirePlanner_Update(&fire_planner, feeder_deg, now,
                         command.interval_ms, command.bullet_count,
                         (uint8_t)((flywheel_ready != 0U) && ((now - start_ms) >= LAUNCH_FLYWHEEL_SPINUP_MS)));
@@ -247,8 +255,8 @@ void LaunchController_Task(void *argument)
                         pid_update(&feeder_pid, feeder_speed, (float)feeder->speed_rpm,
                                    LAUNCH_M2006_FILTER_ALPHA, LAUNCH_M2006_CURRENT_LIMIT));
                     completed_bullets = (uint32_t)(feeder_deg / (LAUNCH_FEEDER_DIR * LAUNCH_FEEDER_STEP_DEG));
-                    target_error = feeder_target_deg - feeder_deg;
 #if (LAUNCH_ENABLE_JAM_PROTECTION != 0U)
+                    target_error = feeder_target_deg - feeder_deg;
                     if (((target_error >= LAUNCH_JAM_MIN_ERROR_DEG) ||
                          (target_error <= -LAUNCH_JAM_MIN_ERROR_DEG)) &&
                         ((feeder->speed_rpm <= LAUNCH_JAM_ZERO_SPEED_RPM) &&
