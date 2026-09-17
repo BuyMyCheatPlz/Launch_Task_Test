@@ -62,6 +62,8 @@
 #define LAUNCH_M2006_CURRENT_LIMIT     6500.0f
 #define LAUNCH_FEEDER_ANGLE_KP         300.0f   /* 拨盘输出角度 → 电机 rpm */
 #define LAUNCH_FEEDER_MAX_RPM          4200.0f
+/* 目标发数下发完成后进入位置保持，使用较低速度上限抑制重负载释放后的过冲。 */
+#define LAUNCH_FEEDER_HOLD_MAX_RPM     1200.0f
 #define LAUNCH_FEEDER_DEADBAND_DEG     0.8f
 #define LAUNCH_FEEDER_PLL_KP_RPM_PER_DEG 60.0f
 #define LAUNCH_FEEDER_PLL_MAX_RPM      5600.0f

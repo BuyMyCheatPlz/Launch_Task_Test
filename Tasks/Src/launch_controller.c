@@ -39,18 +39,30 @@ extern osMessageQueueId_t transportHandle;
 
 static float clamp(float value, float limit) { if (value > limit) return limit; if (value < -limit) return -limit; return value; }
 static float positive_progress(float value) { return (value > 0.0f) ? value : 0.0f; }
+static float absf_local(float value) { return (value >= 0.0f) ? value : -value; }
 static int16_t pid_update(SpeedPid_t *pid, float target, float actual, float alpha, float limit)
 {
-    float error, output;
+    float error, output, next_integral, derivative;
     if (pid->filter_ready == 0U) { pid->filtered_speed = actual; pid->filter_ready = 1U; }
     else pid->filtered_speed += alpha * (actual - pid->filtered_speed);
     error = target - pid->filtered_speed;
-    pid->integral = clamp(pid->integral + error * pid->ki * 0.001f, limit);
-    output = pid->kp * error + pid->integral + pid->kd * (error - pid->previous_error);
+    derivative = error - pid->previous_error;
+    next_integral = clamp(pid->integral + error * pid->ki * 0.001f, limit);
+    output = pid->kp * error + next_integral + pid->kd * derivative;
+    if (!(((output > limit) && (error > 0.0f)) ||
+          ((output < -limit) && (error < 0.0f))))
+        pid->integral = next_integral;
+    output = pid->kp * error + pid->integral + pid->kd * derivative;
     pid->previous_error = error;
     return (int16_t)clamp(output, limit);
 }
 static void pid_reset(SpeedPid_t *pid) { pid->integral = 0.0f; pid->previous_error = 0.0f; pid->filter_ready = 0U; }
+static void reset_all_pid(void)
+{
+    pid_reset(&left_pid);
+    pid_reset(&right_pid);
+    pid_reset(&feeder_pid);
+}
 static void set_all_zero(void)
 {
     LaunchMotorBus_SetCommand(LAUNCH_LEFT_FLYWHEEL_CAN, LAUNCH_LEFT_FLYWHEEL_ID, 0);
@@ -242,11 +254,12 @@ void LaunchController_Task(void *argument)
         feeder = LaunchMotorBus_Feedback(LAUNCH_FEEDER_CAN, LAUNCH_FEEDER_ID);
         flywheel_ready = (uint8_t)((left != 0) && (left->online != 0U) &&
                                    (right != 0) && (right->online != 0U));
-        if (command.stop_request != 0U) { command.stop_request = 0U; active = 0U; jam_retreat_active = 0U; diff_stable_since_ms = 0U; set_all_zero(); pid_reset(&left_pid); pid_reset(&right_pid); pid_reset(&feeder_pid); encoder_ready = 0U; fire_planner.initialized = 0U; }
+        if (command.stop_request != 0U) { command.stop_request = 0U; active = 0U; jam_retreat_active = 0U; diff_stable_since_ms = 0U; set_all_zero(); reset_all_pid(); encoder_ready = 0U; fire_planner.initialized = 0U; }
         if (command.start_request != 0U) { command.start_request = 0U; active = 1U; jam_latched = 0U; jam_retreat_active = 0U;
 #if (LAUNCH_ENABLE_JAM_PROTECTION != 0U)
             jam_stall_since_ms = 0U;
 #endif
+            reset_all_pid();
             diff_stable_since_ms = 0U; completed_bullets = 0U; start_ms = now; encoder_ready = 0U; fire_planner.initialized = 0U; }
         if (active != 0U) {
             /* 摩擦轮任意一侧无反馈时，禁止推进拨盘。 */
@@ -310,6 +323,7 @@ void LaunchController_Task(void *argument)
                         jam_retreat_active = 0U;
                         active = 0U;
                         set_all_zero();
+                        reset_all_pid();
                     }
                 }
                 else
@@ -330,7 +344,7 @@ void LaunchController_Task(void *argument)
                     {
                         /* 目标发数已下发完成后只做位置保持，避免锁相环前馈继续推拨盘。 */
                         feeder_speed = clamp(target_error * LAUNCH_FEEDER_ANGLE_KP,
-                                             LAUNCH_FEEDER_MAX_RPM);
+                                             LAUNCH_FEEDER_HOLD_MAX_RPM);
                     }
                     else
                     {
@@ -369,7 +383,15 @@ void LaunchController_Task(void *argument)
 #endif
                     if ((feeder_enable != 0U) &&
                         (fire_planner.issued_count >= command.bullet_count) &&
-                        (completed_bullets >= command.bullet_count)) { active = 0U; diff_stable_since_ms = 0U; set_all_zero(); }
+                        ((completed_bullets >= command.bullet_count) ||
+                         (absf_local(target_error) <= LAUNCH_FEEDER_DEADBAND_DEG)))
+                    {
+                        active = 0U;
+                        diff_stable_since_ms = 0U;
+                        completed_bullets = command.bullet_count;
+                        set_all_zero();
+                        reset_all_pid();
+                    }
                 }
             }
         }
