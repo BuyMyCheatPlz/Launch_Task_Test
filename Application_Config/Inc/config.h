@@ -6,8 +6,8 @@
 #define LAUNCH_LEFT_FLYWHEEL_ID        2U        /* DJI 电机 ID：1..8 */
 #define LAUNCH_RIGHT_FLYWHEEL_CAN      1U
 #define LAUNCH_RIGHT_FLYWHEEL_ID       3U
-#define LAUNCH_FEEDER_CAN              2U
-#define LAUNCH_FEEDER_ID               5U
+#define LAUNCH_FEEDER_CAN              1U
+#define LAUNCH_FEEDER_ID               1U
 /* 电机方向标定：期望正转填 +1.0f；方向相反时改为 -1.0f。 */
 #define LAUNCH_LEFT_FLYWHEEL_DIR       1.0f
 #define LAUNCH_RIGHT_FLYWHEEL_DIR     -1.0f
@@ -20,12 +20,18 @@
 #define LAUNCH_FEEDER_STEP_DEG         40.0f
 #define LAUNCH_DEFAULT_SPEED_RPM       6000.0f
 #define LAUNCH_DEFAULT_BULLET_COUNT    1U
-#define LAUNCH_DEFAULT_SINGLE_INTERVAL_MS 50U
-/* 1：使用原工程锁相环连发规划；0：逐发规划，间隔可由 VOFA 在线调整。 */
-#define LAUNCH_ENABLE_CONTINUOUS_PLL   1U
+#define LAUNCH_DEFAULT_SINGLE_INTERVAL_MS 66U
+
+/* 发射模式选择：
+ * 1：锁相环连发模式，按 INTERVAL 作为每发周期连续推进；
+ * 0：单发计数模式，每发走 LAUNCH_FEEDER_STEP_DEG，发射间隔可由 VOFA 的 INTERVAL 调整。 */
+#define LAUNCH_ENABLE_PLL_FIRE_MODE    0U
+/* 兼容旧名字，业务代码仍统一使用这个宏判断模式。 */
+#define LAUNCH_ENABLE_CONTINUOUS_PLL   LAUNCH_ENABLE_PLL_FIRE_MODE
+
 /* 卡弹保护：拨盘目标误差大且反馈速度持续接近零时判卡弹；拨盘反退五发后，
  * 全部电机停机，直至下一次 START。 */
-#define LAUNCH_ENABLE_JAM_PROTECTION   0U
+#define LAUNCH_ENABLE_JAM_PROTECTION   1U
 #define LAUNCH_JAM_STALL_MS            300U
 #define LAUNCH_JAM_MIN_ERROR_DEG       20.0f
 #define LAUNCH_JAM_ZERO_SPEED_RPM      30.0f
@@ -41,6 +47,15 @@
 #define LAUNCH_M3508_KD                100.0f
 #define LAUNCH_M3508_FILTER_ALPHA      0.50f
 #define LAUNCH_M3508_CURRENT_LIMIT     16384.0f
+/* 两颗摩擦轮差速补偿环：将左右实测转速按方向统一后比较，差值经比例环以
+ * 等量反向修正两侧目标转速。0=关闭，1=开启。 */
+#define LAUNCH_ENABLE_FLYWHEEL_DIFF_LOOP 1U
+#define LAUNCH_FLYWHEEL_DIFF_KP        0.30f   /* 左右速度差 rpm → 修正 rpm */
+#define LAUNCH_FLYWHEEL_DIFF_MAX_CORRECTION_RPM 500.0f
+/* 差速环开启时，只有左右归一化转速差连续小于该阈值一段时间后，
+ * 才允许拨盘发弹。 */
+#define LAUNCH_FLYWHEEL_DIFF_READY_RPM 100.0f
+#define LAUNCH_FLYWHEEL_DIFF_READY_MS  100U
 #define LAUNCH_M2006_KP                12.0f
 #define LAUNCH_M2006_KI                1.2f
 #define LAUNCH_M2006_FILTER_ALPHA      0.70f
