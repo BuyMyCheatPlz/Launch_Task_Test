@@ -8,10 +8,18 @@
 #define LAUNCH_RIGHT_FLYWHEEL_ID       3U
 #define LAUNCH_FEEDER_CAN              1U
 #define LAUNCH_FEEDER_ID               1U
+/* 可选 pitch 轴 2006：宏关闭时不编译控制和 VOFA 通道。 */
+#define LAUNCH_ENABLE_PITCH_M2006      0U
+#define LAUNCH_PITCH_CAN               2U
+#define LAUNCH_PITCH_ID                1U
+/* CAN2 诊断打印：排查 CAN2 线、终端、电调供电或中断问题时临时打开。
+ * 关闭时底层仍保留诊断统计数据，只是不追加到 VOFA 打印通道。 */
+#define LAUNCH_ENABLE_CAN2_DIAG        0U
 /* 电机方向标定：期望正转填 +1.0f；方向相反时改为 -1.0f。 */
 #define LAUNCH_LEFT_FLYWHEEL_DIR       1.0f
 #define LAUNCH_RIGHT_FLYWHEEL_DIR     -1.0f
 #define LAUNCH_FEEDER_DIR              1.0f
+#define LAUNCH_PITCH_DIR               1.0f
 
 /* 发射机构参数与安全默认值。M2006 编码器位于电机轴。 */
 #define LAUNCH_FEEDER_GEAR_RATIO       36.0f
@@ -29,13 +37,13 @@
 /* 兼容旧名字，业务代码仍统一使用这个宏判断模式。 */
 #define LAUNCH_ENABLE_CONTINUOUS_PLL   LAUNCH_ENABLE_PLL_FIRE_MODE
 
-/* 卡弹保护：拨盘目标误差大且反馈速度持续接近零时判卡弹；拨盘反退五发后，
+/* 卡弹保护：拨盘目标误差大且反馈速度持续接近零时判卡弹；拨盘反退一发后，
  * 全部电机停机，直至下一次 START。 */
 #define LAUNCH_ENABLE_JAM_PROTECTION   1U
 #define LAUNCH_JAM_STALL_MS            300U
 #define LAUNCH_JAM_MIN_ERROR_DEG       20.0f
 #define LAUNCH_JAM_ZERO_SPEED_RPM      30.0f
-#define LAUNCH_JAM_REVERSE_BULLETS     5U
+#define LAUNCH_JAM_REVERSE_BULLETS     1U
 #define LAUNCH_FLYWHEEL_SPINUP_MS      500U
 #define LAUNCH_CONTROL_PERIOD_MS       1U
 #define LAUNCH_VOFA_PERIOD_MS          20U
@@ -67,5 +75,13 @@
 #define LAUNCH_FEEDER_DEADBAND_DEG     0.8f
 #define LAUNCH_FEEDER_PLL_KP_RPM_PER_DEG 60.0f
 #define LAUNCH_FEEDER_PLL_MAX_RPM      5600.0f
+
+/* pitch 轴 2006 位置环，目标和反馈均为 DJI 原始编码器 0..8191。 */
+#define LAUNCH_PITCH_DEFAULT_ENCODER   0U
+#define LAUNCH_PITCH_KP                3.0f
+#define LAUNCH_PITCH_KI                0.0f
+#define LAUNCH_PITCH_KD                0.0f
+#define LAUNCH_PITCH_CURRENT_LIMIT     6500.0f
+#define LAUNCH_PITCH_DEADBAND_ENCODER  8.0f
 
 #endif

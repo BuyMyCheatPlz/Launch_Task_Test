@@ -26,9 +26,16 @@ void LaunchFirePlanner_Update(LaunchFirePlanner_t *planner, float actual_deg,
     float step = LAUNCH_FEEDER_DIR * LAUNCH_FEEDER_STEP_DEG;
     if (planner == 0) return;
     if (interval_ms == 0U) interval_ms = 1U;
-    if ((planner->initialized == 0U) || (enabled == 0U))
+    if (planner->initialized == 0U)
     {
         LaunchFirePlanner_Reset(planner, actual_deg, now_ms);
+        return;
+    }
+    if (enabled == 0U)
+    {
+        /* 差速稳定门控关闭时只冻结新目标的下发节拍，不能重置本次任务。
+         * 已经下发的目标仍由控制器继续完成，避免恢复后重复追加一发。 */
+        planner->last_update_ms = now_ms;
         return;
     }
 #if (LAUNCH_ENABLE_CONTINUOUS_PLL != 0U)
@@ -80,6 +87,7 @@ float LaunchFirePlanner_TargetSpeedRpm(const LaunchFirePlanner_t *planner,
                  LAUNCH_FEEDER_PLL_KP_RPM_PER_DEG * error,
                  LAUNCH_FEEDER_PLL_MAX_RPM);
 #else
+    (void)interval_ms;
     if ((error < LAUNCH_FEEDER_DEADBAND_DEG) &&
         (error > -LAUNCH_FEEDER_DEADBAND_DEG)) return 0.0f;
     return clamp(error * LAUNCH_FEEDER_ANGLE_KP, LAUNCH_FEEDER_MAX_RPM);

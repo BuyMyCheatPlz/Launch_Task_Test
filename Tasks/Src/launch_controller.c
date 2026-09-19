@@ -7,10 +7,22 @@
 #include <string.h>
 
 #define UART_RX_SIZE 64U
-#define VOFA_CHANNEL_COUNT 8U
+#define VOFA_BASE_CHANNEL_COUNT 8U
+#if (LAUNCH_ENABLE_PITCH_M2006 != 0U)
+#define VOFA_PITCH_CHANNEL_COUNT 1U
+#else
+#define VOFA_PITCH_CHANNEL_COUNT 0U
+#endif
+#if (LAUNCH_ENABLE_CAN2_DIAG != 0U)
+#define VOFA_CAN2_DIAG_CHANNEL_COUNT 7U
+#else
+#define VOFA_CAN2_DIAG_CHANNEL_COUNT 0U
+#endif
+#define VOFA_CHANNEL_COUNT (VOFA_BASE_CHANNEL_COUNT + VOFA_PITCH_CHANNEL_COUNT + VOFA_CAN2_DIAG_CHANNEL_COUNT)
 #define VOFA_TX_SIZE (VOFA_CHANNEL_COUNT * sizeof(float) + 4U)
 #define VOFA_TX_TIMEOUT_MS 100U
 typedef struct { float kp, ki, kd, integral, previous_error, filtered_speed; uint8_t filter_ready; } SpeedPid_t;
+typedef struct { float kp, ki, kd, integral, previous_error; } PositionPid_t;
 typedef struct { volatile float speed_rpm; volatile uint32_t bullet_count, interval_ms; volatile uint8_t start_request, stop_request; } Command_t;
 
 static UART_HandleTypeDef *launch_uart;
@@ -19,11 +31,18 @@ static uint8_t vofa_tx_buffer[VOFA_TX_SIZE];
 static volatile uint8_t vofa_tx_busy;
 static uint32_t vofa_tx_start_ms;
 static uint8_t uart_rx_started;
+static volatile uint8_t start_command_armed = 1U;
 static char line[40]; static uint8_t line_length;
 static volatile Command_t command = { LAUNCH_DEFAULT_SPEED_RPM, LAUNCH_DEFAULT_BULLET_COUNT, LAUNCH_DEFAULT_SINGLE_INTERVAL_MS, 0U, 0U };
 static SpeedPid_t left_pid = { LAUNCH_M3508_KP, LAUNCH_M3508_KI, LAUNCH_M3508_KD };
 static SpeedPid_t right_pid = { LAUNCH_M3508_KP, LAUNCH_M3508_KI, LAUNCH_M3508_KD };
 static SpeedPid_t feeder_pid = { LAUNCH_M2006_KP, LAUNCH_M2006_KI, 0.0f };
+#if (LAUNCH_ENABLE_PITCH_M2006 != 0U)
+static PositionPid_t pitch_pid = { LAUNCH_PITCH_KP, LAUNCH_PITCH_KI, LAUNCH_PITCH_KD };
+static volatile uint16_t pitch_target_encoder = LAUNCH_PITCH_DEFAULT_ENCODER;
+static volatile float pitch_encoder_value;
+static volatile uint8_t pitch_target_valid;
+#endif
 static volatile uint8_t active; static volatile uint32_t completed_bullets;
 static volatile float actual_left_rpm, actual_right_rpm, feeder_deg, feeder_target_deg;
 static LaunchFirePlanner_t fire_planner;
@@ -40,6 +59,15 @@ extern osMessageQueueId_t transportHandle;
 static float clamp(float value, float limit) { if (value > limit) return limit; if (value < -limit) return -limit; return value; }
 static float positive_progress(float value) { return (value > 0.0f) ? value : 0.0f; }
 static float absf_local(float value) { return (value >= 0.0f) ? value : -value; }
+#if (LAUNCH_ENABLE_PITCH_M2006 != 0U)
+static float encoder_delta(uint16_t target, uint16_t actual)
+{
+    int32_t delta = (int32_t)target - (int32_t)actual;
+    if (delta > 4096) delta -= 8192;
+    if (delta < -4096) delta += 8192;
+    return (float)delta;
+}
+#endif
 static int16_t pid_update(SpeedPid_t *pid, float target, float actual, float alpha, float limit)
 {
     float error, output, next_integral, derivative;
@@ -57,11 +85,30 @@ static int16_t pid_update(SpeedPid_t *pid, float target, float actual, float alp
     return (int16_t)clamp(output, limit);
 }
 static void pid_reset(SpeedPid_t *pid) { pid->integral = 0.0f; pid->previous_error = 0.0f; pid->filter_ready = 0U; }
+#if (LAUNCH_ENABLE_PITCH_M2006 != 0U)
+static int16_t position_pid_update(PositionPid_t *pid, float error, float limit)
+{
+    float output, next_integral, derivative;
+    derivative = error - pid->previous_error;
+    next_integral = clamp(pid->integral + error * pid->ki * 0.001f, limit);
+    output = pid->kp * error + next_integral + pid->kd * derivative;
+    if (!(((output > limit) && (error > 0.0f)) ||
+          ((output < -limit) && (error < 0.0f))))
+        pid->integral = next_integral;
+    output = pid->kp * error + pid->integral + pid->kd * derivative;
+    pid->previous_error = error;
+    return (int16_t)clamp(output, limit);
+}
+static void position_pid_reset(PositionPid_t *pid) { pid->integral = 0.0f; pid->previous_error = 0.0f; }
+#endif
 static void reset_all_pid(void)
 {
     pid_reset(&left_pid);
     pid_reset(&right_pid);
     pid_reset(&feeder_pid);
+#if (LAUNCH_ENABLE_PITCH_M2006 != 0U)
+    position_pid_reset(&pitch_pid);
+#endif
 }
 static void set_all_zero(void)
 {
@@ -146,11 +193,41 @@ static void process_line(void)
     char *end;
     char *value;
     float speed;
-    unsigned long count, interval;
+    unsigned long count, interval, start_value;
+#if (LAUNCH_ENABLE_PITCH_M2006 != 0U)
+    unsigned long pitch_encoder;
+#endif
     normalize_command();
     value = split_command_value();
-    if (command_is("START", "RUN", "ON") != 0U) command.start_request = 1U;
-    else if (command_is("STOP", "HALT", "OFF") != 0U) command.stop_request = 1U;
+    if (command_is("START", "RUN", "ON") != 0U)
+    {
+        if (*value == '\0')
+        {
+            if (start_command_armed != 0U)
+            {
+                command.start_request = 1U;
+                start_command_armed = 0U;
+            }
+        }
+        else
+        {
+            start_value = strtoul(value, &end, 10);
+            if ((*end == '\0') && (start_value == 0U))
+            {
+                start_command_armed = 1U;
+            }
+            else if ((*end == '\0') && (start_command_armed != 0U))
+            {
+                command.start_request = 1U;
+                start_command_armed = 0U;
+            }
+        }
+    }
+    else if (command_is("STOP", "HALT", "OFF") != 0U)
+    {
+        command.stop_request = 1U;
+        start_command_armed = 1U;
+    }
     else if (command_is("SPEED", "RPM", "FLYWHEEL") != 0U)
     {
         speed = strtof(value, &end);
@@ -169,6 +246,23 @@ static void process_line(void)
         if ((*value != '\0') && (*end == '\0') && (interval >= 1U) &&
             (interval <= 10000U)) command.interval_ms = (uint32_t)interval;
     }
+#if (LAUNCH_ENABLE_PITCH_M2006 != 0U)
+    else if (command_is("PITCH", "PITCHENC", "PITCH_ENCODER") != 0U)
+    {
+        pitch_encoder = strtoul(value, &end, 10);
+        if ((*value != '\0') && (*end == '\0') && (pitch_encoder <= 8191U))
+        {
+            pitch_target_encoder = (uint16_t)pitch_encoder;
+            pitch_target_valid = 1U;
+        }
+    }
+    else if (command_is("PITCHSTOP", "PITCHOFF", "PITCH_STOP") != 0U)
+    {
+        pitch_target_valid = 0U;
+        position_pid_reset(&pitch_pid);
+        LaunchMotorBus_SetCommand(LAUNCH_PITCH_CAN, LAUNCH_PITCH_ID, 0);
+    }
+#endif
     line_length = 0U;
 }
 
@@ -236,6 +330,9 @@ static void process_transport_queue(void)
 void LaunchController_Task(void *argument)
 {
     const LaunchMotorFeedback_t *left, *right, *feeder; uint32_t start_ms = 0U;
+#if (LAUNCH_ENABLE_PITCH_M2006 != 0U)
+    const LaunchMotorFeedback_t *pitch;
+#endif
     uint32_t diff_stable_since_ms = 0U;
     int32_t last_encoder = 0, accumulator = 0; uint8_t encoder_ready = 0U;
     uint32_t wake_tick;
@@ -252,6 +349,9 @@ void LaunchController_Task(void *argument)
         left = LaunchMotorBus_Feedback(LAUNCH_LEFT_FLYWHEEL_CAN, LAUNCH_LEFT_FLYWHEEL_ID);
         right = LaunchMotorBus_Feedback(LAUNCH_RIGHT_FLYWHEEL_CAN, LAUNCH_RIGHT_FLYWHEEL_ID);
         feeder = LaunchMotorBus_Feedback(LAUNCH_FEEDER_CAN, LAUNCH_FEEDER_ID);
+#if (LAUNCH_ENABLE_PITCH_M2006 != 0U)
+        pitch = LaunchMotorBus_Feedback(LAUNCH_PITCH_CAN, LAUNCH_PITCH_ID);
+#endif
         flywheel_ready = (uint8_t)((left != 0) && (left->online != 0U) &&
                                    (right != 0) && (right->online != 0U));
         if (command.stop_request != 0U) { command.stop_request = 0U; active = 0U; jam_retreat_active = 0U; diff_stable_since_ms = 0U; set_all_zero(); reset_all_pid(); encoder_ready = 0U; fire_planner.initialized = 0U; }
@@ -381,14 +481,14 @@ void LaunchController_Task(void *argument)
                     }
                     else jam_stall_since_ms = 0U;
 #endif
-                    if ((feeder_enable != 0U) &&
-                        (fire_planner.issued_count >= command.bullet_count) &&
+                    if ((fire_planner.issued_count >= command.bullet_count) &&
                         ((completed_bullets >= command.bullet_count) ||
                          (absf_local(target_error) <= LAUNCH_FEEDER_DEADBAND_DEG)))
                     {
                         active = 0U;
                         diff_stable_since_ms = 0U;
                         completed_bullets = command.bullet_count;
+                        start_command_armed = 1U;
                         set_all_zero();
                         reset_all_pid();
                     }
@@ -396,6 +496,38 @@ void LaunchController_Task(void *argument)
             }
         }
         else set_all_zero();
+#if (LAUNCH_ENABLE_PITCH_M2006 != 0U)
+        if ((pitch != 0) && (pitch->online != 0U))
+        {
+            pitch_encoder_value = (float)pitch->encoder;
+            if (pitch_target_valid != 0U)
+            {
+                float pitch_error = LAUNCH_PITCH_DIR *
+                    encoder_delta(pitch_target_encoder, pitch->encoder);
+                if (absf_local(pitch_error) <= LAUNCH_PITCH_DEADBAND_ENCODER)
+                {
+                    LaunchMotorBus_SetCommand(LAUNCH_PITCH_CAN, LAUNCH_PITCH_ID, 0);
+                    position_pid_reset(&pitch_pid);
+                }
+                else
+                {
+                    LaunchMotorBus_SetCommand(LAUNCH_PITCH_CAN, LAUNCH_PITCH_ID,
+                        position_pid_update(&pitch_pid, pitch_error,
+                                            LAUNCH_PITCH_CURRENT_LIMIT));
+                }
+            }
+            else
+            {
+                LaunchMotorBus_SetCommand(LAUNCH_PITCH_CAN, LAUNCH_PITCH_ID, 0);
+                position_pid_reset(&pitch_pid);
+            }
+        }
+        else
+        {
+            LaunchMotorBus_SetCommand(LAUNCH_PITCH_CAN, LAUNCH_PITCH_ID, 0);
+            position_pid_reset(&pitch_pid);
+        }
+#endif
         LaunchMotorBus_Service(now);
         wake_tick += LAUNCH_CONTROL_PERIOD_MS;
         (void)osDelayUntil(wake_tick);
@@ -404,10 +536,13 @@ void LaunchController_Task(void *argument)
 
 void LaunchController_VofaTask(void *argument)
 {
-    float out[8]; (void)argument;
+    float out[VOFA_CHANNEL_COUNT]; (void)argument;
     uint32_t wake_tick = osKernelGetTickCount();
     for (;;) {
         uint32_t now = HAL_GetTick();
+#if ((LAUNCH_ENABLE_PITCH_M2006 != 0U) || (LAUNCH_ENABLE_CAN2_DIAG != 0U))
+        uint8_t vofa_index;
+#endif
         float vofa_target_deg = feeder_target_deg;
         float vofa_actual_deg = feeder_deg;
         if (fire_planner.initialized != 0U)
@@ -418,10 +553,33 @@ void LaunchController_VofaTask(void *argument)
                 (feeder_deg - fire_planner.start_deg);
         }
         /* I0=转速，I1=发弹数，I2=单发间隔，I3=状态，I4=完成数，
-           I5=左摩擦轮 rpm，I6=本次目标角，I7=本次实际角。 */
+           I5=左摩擦轮 rpm，I6=本次目标角，I7=本次实际角。
+           可选通道按宏追加：pitch 编码器、CAN2 诊断。 */
         out[0] = command.speed_rpm; out[1] = (float)command.bullet_count; out[2] = (float)command.interval_ms;
         out[3] = (jam_retreat_active != 0U) ? 2.0f : (jam_latched != 0U) ? -1.0f : (float)active;
         out[4] = (float)completed_bullets; out[5] = actual_left_rpm; out[6] = vofa_target_deg; out[7] = vofa_actual_deg;
+#if ((LAUNCH_ENABLE_PITCH_M2006 != 0U) || (LAUNCH_ENABLE_CAN2_DIAG != 0U))
+        vofa_index = VOFA_BASE_CHANNEL_COUNT;
+#endif
+#if (LAUNCH_ENABLE_PITCH_M2006 != 0U)
+        out[vofa_index++] = pitch_encoder_value;
+#endif
+#if (LAUNCH_ENABLE_CAN2_DIAG != 0U)
+        {
+            const LaunchCanDiag_t *can2_diag = LaunchMotorBus_Diag(2U);
+            if (can2_diag != 0)
+            {
+                out[vofa_index++] = (float)can2_diag->rx_count;
+                out[vofa_index++] = (float)can2_diag->last_std_id;
+                out[vofa_index++] = (can2_diag->last_rx_ms == 0U) ?
+                    -1.0f : (float)(now - can2_diag->last_rx_ms);
+                out[vofa_index++] = (float)can2_diag->error_code;
+                out[vofa_index++] = (float)(can2_diag->esr & 0x07U);
+                out[vofa_index++] = (float)((can2_diag->esr >> 16U) & 0xFFU);
+                out[vofa_index++] = (float)((can2_diag->esr >> 24U) & 0xFFU);
+            }
+        }
+#endif
         /* TX DMA 避免低优先级遥测任务阻塞 1 ms 控制任务；缓冲区必须保持
            有效，直到 TxCplt 回调释放它。 */
         if ((vofa_tx_busy != 0U) && ((now - vofa_tx_start_ms) >= VOFA_TX_TIMEOUT_MS))

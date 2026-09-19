@@ -4,6 +4,7 @@
 
 static CAN_HandleTypeDef *buses[2];
 static LaunchMotorFeedback_t feedback[2][8];
+static LaunchCanDiag_t diag[2];
 static int16_t command[2][8];
 
 static void put_be(uint8_t *p, int16_t value) { p[0] = (uint8_t)((uint16_t)value >> 8); p[1] = (uint8_t)value; }
@@ -12,7 +13,8 @@ void LaunchMotorBus_Init(CAN_HandleTypeDef *can1, CAN_HandleTypeDef *can2)
 {
     CAN_FilterTypeDef filter = {0};
     buses[0] = can1; buses[1] = can2;
-    memset(feedback, 0, sizeof(feedback)); memset(command, 0, sizeof(command));
+    memset(feedback, 0, sizeof(feedback)); memset(diag, 0, sizeof(diag));
+    memset(command, 0, sizeof(command));
     filter.FilterActivation = ENABLE; filter.FilterMode = CAN_FILTERMODE_IDMASK;
     filter.FilterScale = CAN_FILTERSCALE_32BIT; filter.FilterIdHigh = 0; filter.FilterIdLow = 0;
     filter.FilterMaskIdHigh = 0; filter.FilterMaskIdLow = 0; filter.FilterFIFOAssignment = CAN_FILTER_FIFO0;
@@ -35,6 +37,12 @@ const LaunchMotorFeedback_t *LaunchMotorBus_Feedback(uint8_t can_index, uint8_t 
     return &feedback[can_index - 1U][motor_id - 1U];
 }
 
+const LaunchCanDiag_t *LaunchMotorBus_Diag(uint8_t can_index)
+{
+    if ((can_index < 1U) || (can_index > 2U)) return 0;
+    return &diag[can_index - 1U];
+}
+
 static void send_group(CAN_HandleTypeDef *bus, uint32_t id, const int16_t values[4])
 {
     CAN_TxHeaderTypeDef header = {0};
@@ -50,6 +58,11 @@ void LaunchMotorBus_Service(uint32_t now_ms)
     uint8_t b, id;
     for (b = 0; b < 2U; ++b) {
         int16_t low[4], high[4];
+        if (buses[b] != 0)
+        {
+            diag[b].error_code = HAL_CAN_GetError(buses[b]);
+            diag[b].esr = buses[b]->Instance->ESR;
+        }
         for (id = 0; id < 4U; ++id) { low[id] = command[b][id]; high[id] = command[b][id + 4U]; }
         send_group(buses[b], 0x200U, low); send_group(buses[b], 0x1FFU, high);
         for (id = 0; id < 8U; ++id) if ((feedback[b][id].online != 0U) && ((now_ms - feedback[b][id].last_feedback_ms) > LAUNCH_MOTOR_OFFLINE_MS)) feedback[b][id].online = 0U;
@@ -63,6 +76,9 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
     b = (hcan == buses[0]) ? 0U : 1U;
     while (HAL_CAN_GetRxFifoFillLevel(hcan, CAN_RX_FIFO0) > 0U) {
         if (HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &header, data) != HAL_OK) break;
+        diag[b].rx_count++;
+        diag[b].last_rx_ms = HAL_GetTick();
+        diag[b].last_std_id = (uint16_t)header.StdId;
         if ((header.IDE != CAN_ID_STD) || (header.DLC != 8U) || (header.StdId < 0x201U) || (header.StdId > 0x208U)) continue;
         id = (uint8_t)(header.StdId - 0x201U);
         feedback[b][id].encoder = (uint16_t)(((uint16_t)data[0] << 8) | data[1]);
